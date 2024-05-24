@@ -27,25 +27,33 @@ def get_private_ip_address_prefix_length(ip_address: IPv4Address) -> int:
     raise ValueError(f"No networks found to match {ip_address}")
 
 
-async def query_host(ip_address: IPv4Address) -> IPv4Address | None:
+async def ask_if_manager(ip_address: IPv4Address) -> IPv4Address | None:
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=1)
+        ) as session:
             async with session.get(f"https://{ip_address}:9393/role") as response:
                 role = await response.text()
                 if role == "Manager":
                     return ip_address
     except:
-        pass
+        print(f"Failed on {ip_address}")
+        return None
 
 
 async def find_manager(network: IPv4Network) -> IPv4Address:
     tasks = [
-        asyncio.create_task(scan_host(host))
-        for host in interface.network.hosts()
-        if host.version == 4 and str(host) != str(host_ip)
+        asyncio.create_task(ask_if_manager(host))
+        for host in network.hosts()
+        if str(host) != "192.168.0.164"
     ]
 
-    other_open_hosts = [host for host in await asyncio.gather(*tasks) if host]
+    managers = tuple(host for host in await asyncio.gather(*tasks) if host)
+    if len(managers) > 1:
+        raise ValueError(f"Multiple managers found for {network}")
+
+    if len(managers) == 1:
+        return managers[0]
 
 
 async def main():
@@ -57,7 +65,8 @@ async def main():
     network = interface.network
     assert network.version == 4
 
-    manager_ip = await find_manager(interface.network)
+    manager_ip = await find_manager(network)
+    print(manager_ip)
 
 
 if __name__ == "__main__":
