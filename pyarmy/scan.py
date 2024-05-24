@@ -32,9 +32,9 @@ async def ask_if_manager(ip_address: IPv4Address) -> IPv4Address | None:
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=1)
         ) as session:
-            async with session.get(f"https://{ip_address}:9393/role") as response:
+            async with session.get(f"http://{ip_address}:9393/role") as response:
                 role = await response.text()
-                if role == "Manager":
+                if "Manager" in role:
                     return ip_address
     except:
         print(f"Failed on {ip_address}")
