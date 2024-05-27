@@ -9,6 +9,8 @@ from aiohttp import ClientSession, ClientTimeout, ClientConnectorError
 from ifaddr import get_adapters
 from ipaddress import IPv4Address, IPv4Network, ip_interface
 
+type IPv4AddressesAndRole = deque[tuple[IPv4Address, str]]
+
 
 def get_local_network_address() -> IPv4Address:
     """
@@ -58,11 +60,12 @@ async def get_role(address: IPv4Address) -> tuple[IPv4Address, Optional[str]]:
     If the application is running on the address, a role will be returned.
     If no application is present, or the device is not running or accepting connections,
     nothing will be returned.
+    :todo: This function should share a session across requests.
     :param address: The address to query
     :return: The role of the address
     """
     try:
-        async with ClientSession(timeout=ClientTimeout(total=1)) as session:
+        async with ClientSession(timeout=ClientTimeout(total=0.25)) as session:
             # This uses unencrypted HTTP to set a URL to request
             port = 9255
             request = f"http://{address}:{port}/role"
@@ -84,7 +87,7 @@ async def get_role(address: IPv4Address) -> tuple[IPv4Address, Optional[str]]:
 
 async def get_roles_in_network(
     network: IPv4Network,
-) -> deque[tuple[IPv4Address, str]]:
+) -> IPv4AddressesAndRole:
     """
     This function queries available addresses in the network to ask their role.
     This function asynchronously schedules HTTP requests to be sent to each address, and if any
@@ -104,6 +107,19 @@ async def get_roles_in_network(
     return roles
 
 
+def get_manager_from_roles(roles: IPv4AddressesAndRole) -> Optional[IPv4Address]:
+    """
+    This function loops through a deque of addresses and roles to find if a manager is present.
+    :param roles: The deque to loop through
+    :return: The manager's address, if found
+    """
+    for host, role in roles:
+        if "Manager" in role:
+            return host
+
+    return None
+
+
 async def main():
     local_address = get_local_network_address()
 
@@ -114,8 +130,10 @@ async def main():
     network = interface.network
     assert network.version == 4
 
-    manager_ip = await get_roles_in_network(network)
-    print(manager_ip)
+    network_roles = await get_roles_in_network(network)
+
+    manager_address = get_manager_from_roles(network_roles)
+    print(manager_address)
 
 
 if __name__ == "__main__":
