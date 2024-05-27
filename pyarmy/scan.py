@@ -1,11 +1,13 @@
 # pyright: strict
 
 import asyncio
+from collections import deque
 from socket import socket, AF_INET, SOCK_DGRAM
+from typing import Optional
 
 from aiohttp import ClientSession, ClientTimeout, ClientConnectorError
 from ifaddr import get_adapters
-from ipaddress import IPv4Address, ip_interface, IPv4Network
+from ipaddress import IPv4Address, IPv4Network, ip_interface
 
 
 def get_local_network_address() -> IPv4Address:
@@ -50,7 +52,7 @@ def get_network_prefix_length_by_address(address: IPv4Address) -> int:
     raise ValueError(f"There were no adapters found that matched {address}.")
 
 
-async def get_role(address: IPv4Address) -> str | None:
+async def get_role(address: IPv4Address) -> tuple[IPv4Address, Optional[str]]:
     """
     This function gets the role of an address, by querying the corresponding application.
     If the application is running on the address, a role will be returned.
@@ -61,8 +63,9 @@ async def get_role(address: IPv4Address) -> str | None:
     """
     try:
         async with ClientSession(timeout=ClientTimeout(total=1)) as session:
+            # This uses unencrypted HTTP to set a URL to request
             port = 9255
-            request = f"https://{address}:{port}/role"
+            request = f"http://{address}:{port}/role"
 
             # This requests the address for a role response
             async with session.get(request) as response:
@@ -70,28 +73,35 @@ async def get_role(address: IPv4Address) -> str | None:
 
                 # This checks what role was found
                 if "Manager" in role:
-                    return "Manager"
+                    return address, role
 
     # This handles other cases, where a response is missing or incorrect
-    except ClientConnectorError:
-        return None
+    except (ClientConnectorError, asyncio.TimeoutError):
+        return address, None
     else:
         raise RuntimeError("There has been an unknown error.")
 
 
-async def find_manager(network: IPv4Network) -> IPv4Address | None:
-    tasks = [
-        asyncio.create_task(get_role(host))
-        for host in network.hosts()
-        if str(host) != "192.168.0.164"
-    ]
+async def get_roles_in_network(
+    network: IPv4Network,
+) -> deque[tuple[IPv4Address, str]]:
+    """
+    This function queries available addresses in the network to ask their role.
+    This function asynchronously schedules HTTP requests to be sent to each address, and if any
+    roles are found, it will be returned from this function.
+    :param network: The network space to query
+    :return: The roles found in the network
+    """
+    roles: deque[tuple[IPv4Address, str]] = deque()
 
-    managers = tuple(host for host in await asyncio.gather(*tasks) if host)
-    if len(managers) > 1:
-        raise ValueError(f"Multiple managers found for {network}")
+    queries = deque(get_role(host) for host in network.hosts())
+    responses = await asyncio.gather(*queries)
 
-    if len(managers) == 1:
-        return managers[0]
+    for host, role in responses:
+        if role:
+            roles.append((host, role))
+
+    return roles
 
 
 async def main():
@@ -104,7 +114,7 @@ async def main():
     network = interface.network
     assert network.version == 4
 
-    manager_ip = await find_manager(network)
+    manager_ip = await get_roles_in_network(network)
     print(manager_ip)
 
 
