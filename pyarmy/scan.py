@@ -61,7 +61,8 @@ async def get_role(address: IPv4Address) -> str | None:
     """
     try:
         async with ClientSession(timeout=ClientTimeout(total=1)) as session:
-            request = f"http://{address}:9393/role"
+            port = 9255
+            request = f"https://{address}:{port}/role"
 
             # This requests the address for a role response
             async with session.get(request) as response:
