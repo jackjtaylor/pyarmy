@@ -95,7 +95,6 @@ async def get_roles_in_network(
     :param network: The network space to query
     :return: The roles found in the network
     """
-
     queries = deque(get_role(host) for host in network.hosts())
     responses = await asyncio.gather(*queries)
 
@@ -118,7 +117,10 @@ def get_manager_from_roles(roles: IPv4AddressesAndRole) -> Optional[IPv4Address]
     if len(managers) > limit:
         raise ValueError("There is more than one manager on the network.")
 
-    return managers[limit]
+    elif not managers:
+        raise ValueError("There are no managers on the network.")
+
+    return managers[limit - 1]
 
 
 async def main():
