@@ -48,7 +48,7 @@ def get_network_prefix_length_by_address(address: IPv4Address) -> int:
         if adapter.ips:
             # This loops through each network linked to an adapter
             for ip in adapter.ips:
-                if ip.ip == str(address):
+                if ip.is_IPv4 and ip.ip == str(address):
                     return ip.network_prefix
 
     raise ValueError(f"There were no adapters found that matched {address}.")
@@ -95,14 +95,13 @@ async def get_roles_in_network(
     :param network: The network space to query
     :return: The roles found in the network
     """
-    roles: deque[tuple[IPv4Address, str]] = deque()
 
     queries = deque(get_role(host) for host in network.hosts())
     responses = await asyncio.gather(*queries)
 
-    for host, role in responses:
-        if role:
-            roles.append((host, role))
+    roles: IPv4AddressesAndRole = deque(
+        (host, role) for host, role in responses if role
+    )
 
     return roles
 
@@ -113,11 +112,13 @@ def get_manager_from_roles(roles: IPv4AddressesAndRole) -> Optional[IPv4Address]
     :param roles: The deque to loop through
     :return: The manager's address, if found
     """
-    for host, role in roles:
-        if "Manager" in role:
-            return host
+    managers = [host for host, role in roles if "Manager" in role]
 
-    return None
+    limit = 1
+    if len(managers) > limit:
+        raise ValueError("There is more than one manager on the network.")
+
+    return managers[limit]
 
 
 async def main():
@@ -127,9 +128,11 @@ async def main():
 
     interface = ip_interface(f"{str(local_address)}/{network_prefix_length}")
 
-    network = interface.network
-    assert network.version == 4
+    ipv4 = 4
+    if interface.network.version != ipv4:
+        raise ConnectionError("There was an error finding an IPv4 interface.")
 
+    network = interface.network
     network_roles = await get_roles_in_network(network)
 
     manager_address = get_manager_from_roles(network_roles)
