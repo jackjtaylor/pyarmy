@@ -1,8 +1,8 @@
 import uvicorn
 from fastapi import FastAPI, Request
-from tinydb import TinyDB
+import pickledb
 
-db = TinyDB("db.json")
+database = pickledb.load("test.json", True)
 app = FastAPI()
 
 
@@ -18,11 +18,7 @@ async def get_role() -> str:
 
 @app.post("/send/{cmd}")
 async def send_cmd(cmd: str):
-    table = db.table("workers")
-    workers = table.all()
-    for w in workers:
-        print(w.keys())
-        pass
+    workers = database.table("workers")
 
 
 @app.get("/connect")
@@ -30,9 +26,10 @@ async def get_new_worker(request: Request):
     if not request.client:
         return
 
-    workers = db.table("workers")
     configuration = {"status": "Online", "uptime": 0}
-    workers.insert({request.client.host: configuration})
+    database.dcreate("workers")
+    database.dadd("workers", (request.client.host, configuration))
+    # Can't use TinyDB as strings can't be IDs
 
 
 if __name__ == "__main__":
