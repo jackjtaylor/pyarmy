@@ -1,9 +1,9 @@
 from ipaddress import IPv4Address
-from typing import Mapping
 
 import uvicorn
+from aiohttp import ClientSession, ClientTimeout
 from fastapi import FastAPI, Request
-from tinydb import TinyDB
+from tinydb import TinyDB, Query
 
 database = TinyDB("db.json")
 app = FastAPI()
@@ -14,9 +14,23 @@ async def get_role() -> str:
     return "Manager"
 
 
-@app.post("/send?={task}")
-async def send_task(task: Mapping):
-    pass
+@app.post("/send/{task}")
+async def send_task(task: str):
+    workers = database.table("workers")
+    worker_responses = {}
+
+    for worker in workers.all():
+        async with ClientSession(timeout=ClientTimeout(total=0.25)) as session:
+            # This uses unencrypted HTTP to set a URL to request
+            port = 9255
+            request = f"http://{worker["ip"]}:{port}/get_task?=ipconfig"
+
+            # This requests the address for a role response
+            async with session.post(request) as response:
+                code = await response.text()
+                worker_responses[worker["ip"]] = code
+
+    print(worker_responses)
 
 
 @app.get("/connect")
@@ -29,10 +43,17 @@ async def connect(request: Request):
         return
 
     ip = IPv4Address(request.client.host)
-    configuration = {"ip": ip.exploded, "status": "online"}
+
+    configuration = {"ip": str(ip), "status": "online"}
 
     workers = database.table("workers")
-    workers.insert(configuration)
+    worker = Query()
+    existing = workers.search(worker.ip == str(ip))
+
+    if not existing:
+        workers.insert(configuration)
+    else:
+        workers.update(configuration, worker.ip == str(ip))
 
 
 if __name__ == "__main__":

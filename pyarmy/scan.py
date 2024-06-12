@@ -23,8 +23,8 @@ def get_local_network_address() -> IPv4Address:
     """
     sock = socket(AF_INET, SOCK_DGRAM)
 
-    # This creates a fake server and port to be used
-    server = "1"
+    # This creates a server and port to be used (but not sent to)
+    server = "1.1.1.1"
     port = 1
 
     with sock:
@@ -60,7 +60,7 @@ async def get_role(address: IPv4Address) -> tuple[IPv4Address, Optional[str]]:
     If the application is running on the address, a role will be returned.
     If no application is present, or the device is not running or accepting connections,
     nothing will be returned.
-    :todo: This function should share a session across requests.
+    :todo: This function should share a session across requests for performance purposes.
     :param address: The address to query
     :return: The role of the address
     """
@@ -73,16 +73,11 @@ async def get_role(address: IPv4Address) -> tuple[IPv4Address, Optional[str]]:
             # This requests the address for a role response
             async with session.get(request) as response:
                 role = await response.text()
-
-                # This checks what role was found
-                if "Manager" in role:
-                    return address, role
+                return address, role
 
     # This handles other cases, where a response is missing or incorrect
     except (ClientConnectorError, asyncio.TimeoutError):
         return address, None
-    else:
-        raise RuntimeError("There has been an unknown error.")
 
 
 async def get_roles_in_network(
